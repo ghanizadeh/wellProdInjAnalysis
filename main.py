@@ -84,7 +84,7 @@ def plot_well_map(df, label_mode):
     return fig
 
 # --------------------------------------------------
-# Function to plot Water Injection vs Production History
+# Function to plot Water Injection vs Water Production History
 # --------------------------------------------------
 def plot_water_inj_prod(prod_df, inj_df, prod_wells, inj_wells):
     fig = go.Figure()
@@ -125,6 +125,97 @@ def plot_water_inj_prod(prod_df, inj_df, prod_wells, inj_wells):
     )
     return fig
 
+# --------------------------------------------------
+# Function to plot Oil Production vs Water Injection History
+# --------------------------------------------------
+def plot_oil_inj_prod(prod_df, inj_df, prod_wells, inj_wells):
+    fig = go.Figure()
+
+    # Oil production lines
+    for i, well in enumerate(prod_wells):
+        data = prod_df[prod_df["UWI"] == well]
+        oil_color = "brown" if i == 0 else None  # First production well = brown
+
+        fig.add_trace(go.Scatter(
+            x=pd.to_datetime(data["Date"], errors="coerce"),
+            y=data["Oil M3"],
+            name=f"Oil Production from well {well}",
+            mode="lines+markers",
+            yaxis="y2",
+            line=dict(color=oil_color) if oil_color else {}
+        ))
+
+    # Water injection lines
+    for j, well in enumerate(inj_wells):
+        data = inj_df[inj_df["UWI"] == well]
+        inj_color = "blue" if j == 0 else None  # First injection well = blue
+
+        fig.add_trace(go.Scatter(
+            x=pd.to_datetime(data["Date"], errors="coerce"),
+            y=data["Water Inj M3"],
+            name=f"Water Injection into Well {well}",
+            mode="lines+markers",
+            line=dict(color=inj_color) if inj_color else {}
+        ))
+
+    # Calculate maximum for shared scale
+    max_val = 0
+    if prod_wells:
+        max_val = max(max_val, prod_df[prod_df["UWI"].isin(prod_wells)]["Oil M3"].max())
+    if inj_wells:
+        max_val = max(max_val, inj_df[inj_df["UWI"].isin(inj_wells)]["Water Inj M3"].max())
+
+    fig.update_layout(
+        title="Water Injection vs Oil Production History",
+        xaxis=dict(title="Date (month)"),
+        yaxis=dict(title="Water Injection M3", range=[0, max_val]),
+        yaxis2=dict(title="Oil Production M3", overlaying="y", side="right", range=[0, max_val])
+    )
+    return fig
+
+# --------------------------------------------------
+# Function to plot Gas Production vs Water Injection History
+# --------------------------------------------------
+def plot_gas_inj_prod(prod_df, inj_df, prod_wells, inj_wells):
+    fig = go.Figure()
+
+    # Gas production bars
+    for i, well in enumerate(prod_wells):
+        data = prod_df[prod_df["UWI"] == well]
+        gas_color = "green" if i == 0 else None  # first well = green
+
+        fig.add_trace(go.Bar(
+            x=pd.to_datetime(data["Date"], errors="coerce"),
+            y=data["Gas E3M3"],
+            name=f"Gas Production from well {well}",
+            yaxis="y2",
+            marker=dict(color=gas_color) if gas_color else {}
+        ))
+
+    # Water injection lines
+    for well in inj_wells:
+        data = inj_df[inj_df["UWI"] == well]
+        fig.add_trace(go.Scatter(
+            x=pd.to_datetime(data["Date"], errors="coerce"),
+            y=data["Water Inj M3"],
+            name=f"Water Injection into Well {well}",
+            mode="lines+markers"
+        ))
+
+    max_val = 0
+    if prod_wells:
+        max_val = max(max_val, prod_df[prod_df["UWI"].isin(prod_wells)]["Gas E3M3"].max())
+    if inj_wells:
+        max_val = max(max_val, inj_df[inj_df["UWI"].isin(inj_wells)]["Water Inj M3"].max())
+
+    fig.update_layout(
+        title="Water Injection vs Gas Production History",
+        xaxis=dict(title="Date (month)"),
+        yaxis=dict(title="Water Injection M3", range=[0, max_val]),
+        yaxis2=dict(title="Gas Production M3", overlaying="y", side="right", range=[0, max_val]),
+        barmode="overlay"
+    )
+    return fig
 
 # --------------------------------------------------
 # Function to plot Oil vs Water Production History
@@ -134,12 +225,15 @@ def plot_oil_water_prod(prod_df, prod_wells):
 
     for well in prod_wells:
         data = prod_df[prod_df["UWI"] == well]
+        oil_color = "brown" if len(prod_wells) == 1 else None
+
         fig.add_trace(go.Scatter(
             x=pd.to_datetime(data["Date"], errors="coerce"),
             y=data["Oil M3"],
             name=f"Oil Production {well}",
             mode="lines+markers",
-            yaxis="y1"
+            yaxis="y1",
+            line=dict(color=oil_color) if oil_color else {}
         ))
 
         fig.add_trace(go.Bar(
@@ -150,7 +244,6 @@ def plot_oil_water_prod(prod_df, prod_wells):
             opacity=0.5
         ))
 
-    # Calculate maximum for shared scale
     max_val = 0
     if prod_wells:
         max_val = max(
@@ -166,6 +259,50 @@ def plot_oil_water_prod(prod_df, prod_wells):
         barmode="overlay"
     )
     return fig
+
+# --------------------------------------------------
+# Function to plot Gas vs Water Production History
+# --------------------------------------------------
+def plot_gas_water_prod(prod_df, prod_wells):
+    fig = go.Figure()
+
+    for i, well in enumerate(prod_wells):
+        data = prod_df[prod_df["UWI"] == well]
+        gas_color = "green" if i == 0 else None  # first well = green
+
+        fig.add_trace(go.Scatter(
+            x=pd.to_datetime(data["Date"], errors="coerce"),
+            y=data["Gas E3M3"],
+            name=f"Gas Production {well}",
+            mode="lines+markers",
+            yaxis="y1",
+            line=dict(color=gas_color) if gas_color else {}
+        ))
+
+        fig.add_trace(go.Bar(
+            x=pd.to_datetime(data["Date"], errors="coerce"),
+            y=data["Water M3"],
+            name=f"Water Production {well}",
+            yaxis="y2",
+            opacity=0.5
+        ))
+
+    max_val = 0
+    if prod_wells:
+        max_val = max(
+            prod_df[prod_df["UWI"].isin(prod_wells)]["Gas E3M3"].max(),
+            prod_df[prod_df["UWI"].isin(prod_wells)]["Water M3"].max()
+        )
+
+    fig.update_layout(
+        title="Gas vs Water Production History",
+        xaxis=dict(title="Date (month)"),
+        yaxis=dict(title="Gas Production M3", range=[0, max_val]),
+        yaxis2=dict(title="Water Production M3", overlaying="y", side="right", range=[0, max_val]),
+        barmode="overlay"
+    )
+    return fig
+
 
 
 # --------------------------------------------------
@@ -192,7 +329,7 @@ if welllist_file and prod_file and inj_file:
             "Include Unknown Well_Type?", ["Yes", "No"], index=1, horizontal=True
         ) == "Yes"
         label_mode = st.radio(
-            "Label Display Mode", ["Hover tooltips", "Visible labels"], index=0, horizontal=True
+            "Label Display Mode", ["Hover tooltips", "Visible labels"], index=1, horizontal=True
         )
 
         df_wells = prepare_well_data(df_welllist, df_prod, df_inj, include_unknown)
@@ -204,16 +341,35 @@ if welllist_file and prod_file and inj_file:
         st.dataframe(df_wells[["UWI", "Well_ID", "Well_Type", "Deviation_Type"]])
 
         st.subheader("Select Wells for Plots")
-        prod_wells = st.multiselect("Select Production Wells (UWI)", sorted(df_prod["UWI"].unique()))
         inj_wells = st.multiselect("Select Injection Wells (UWI)", sorted(df_inj["UWI"].unique()))
+        prod_wells = st.multiselect("Select Production Wells (UWI)", sorted(df_prod["UWI"].unique()))
+        
 
+        #if prod_wells or inj_wells:
         if prod_wells or inj_wells:
             if prod_wells and inj_wells:
+                fig1 = plot_water_inj_prod(df_prod, df_inj, prod_wells, inj_wells)
+                st.plotly_chart(fig1, use_container_width=True)
+
+                fig3 = plot_gas_inj_prod(df_prod, df_inj, prod_wells, inj_wells)
+                st.plotly_chart(fig3, use_container_width=True)
+ 
+                fig_oil_inj = plot_oil_inj_prod(df_prod, df_inj, prod_wells, inj_wells)
+                st.plotly_chart(fig_oil_inj, use_container_width=True)
+
+            elif inj_wells:
                 fig1 = plot_water_inj_prod(df_prod, df_inj, prod_wells, inj_wells)
                 st.plotly_chart(fig1, use_container_width=True)
 
             if prod_wells:
                 fig2 = plot_oil_water_prod(df_prod, prod_wells)
                 st.plotly_chart(fig2, use_container_width=True)
+
+                fig4 = plot_gas_water_prod(df_prod, prod_wells)
+                st.plotly_chart(fig4, use_container_width=True)
+
+
+
+
 else:
     st.info("Please upload all three files to generate the map and plots.")
