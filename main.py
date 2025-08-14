@@ -2,6 +2,106 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
+import plotly.express as px
+
+
+# --------------------------------------------------
+# Function: Calculate Well Statistics
+# --------------------------------------------------
+def calculate_well_statistics(prod_df, inj_df):
+    # Ensure Date column is datetime
+    prod_df["Date"] = pd.to_datetime(prod_df["Date"], errors="coerce")
+    inj_df["Date"] = pd.to_datetime(inj_df["Date"], errors="coerce")
+
+    # Production summary
+    prod_summary = prod_df.groupby("UWI").agg(
+        start_date=("Date", "min"),
+        end_date=("Date", "max"),
+        days_active=("Date", "nunique"),
+        oil_cum=("Oil M3", "sum"),
+        gas_cum=("Gas E3M3", "sum"),
+        water_cum=("Water M3", "sum"),
+        avg_oil_rate=("Oil M3", "mean"),
+        avg_gas_rate=("Gas E3M3", "mean"),
+        avg_water_rate=("Water M3", "mean")
+    ).reset_index()
+
+    # Injection summary
+    inj_summary = inj_df.groupby("UWI").agg(
+        inj_start=("Date", "min"),
+        inj_end=("Date", "max"),
+        inj_days=("Date", "nunique"),
+        inj_cum=("Water Inj M3", "sum"),
+        avg_inj_rate=("Water Inj M3", "mean")
+    ).reset_index()
+
+    # Merge summaries
+    well_stats = pd.merge(prod_summary, inj_summary, on="UWI", how="outer")
+
+    # Ratios
+    well_stats["water_cut_%"] = (well_stats["water_cum"] / 
+                                 (well_stats["oil_cum"] + well_stats["water_cum"])) * 100
+    well_stats["GOR"] = well_stats["gas_cum"] / well_stats["oil_cum"]
+    well_stats["inj_prod_ratio"] = well_stats["inj_cum"] / well_stats["water_cum"]
+
+    return well_stats
+
+
+# --------------------------------------------------
+# Function: Monthly/Yearly Totals
+# --------------------------------------------------
+def calculate_time_totals(df, freq="M"):
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    return df.groupby(pd.Grouper(key="Date", freq=freq)).agg(
+        oil_total=("Oil M3", "sum"),
+        gas_total=("Gas E3M3", "sum"),
+        water_total=("Water M3", "sum")
+    ).reset_index()
+
+
+# --------------------------------------------------
+# Function: Display Stats & Plots in Streamlit
+# --------------------------------------------------
+def display_statistics_and_analysis(prod_df, inj_df):
+    st.subheader("📊 Well Statistics Summary")
+    well_stats = calculate_well_statistics(prod_df, inj_df)
+    st.dataframe(well_stats.style.format("{:.2f}", subset=[
+        "oil_cum", "gas_cum", "water_cum", "avg_oil_rate", 
+        "avg_gas_rate", "avg_water_rate", "inj_cum", 
+        "avg_inj_rate", "water_cut_%", "GOR", "inj_prod_ratio"
+    ]))
+
+    # Top producers/injectors
+    st.subheader("🏆 Top Producers & Injectors")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Top 5 Oil Producers (Cumulative m³)**")
+        st.dataframe(well_stats.nlargest(5, "oil_cum")[["UWI", "oil_cum"]])
+    with col2:
+        st.write("**Top 5 Water Injectors (Cumulative m³)**")
+        st.dataframe(well_stats.nlargest(5, "inj_cum")[["UWI", "inj_cum"]])
+
+    # Monthly totals
+    st.subheader("📅 Monthly Totals")
+    monthly_totals = calculate_time_totals(prod_df, freq="M")
+    st.dataframe(monthly_totals)
+
+    # Plots
+    st.subheader("📈 Monthly Production Trends")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=monthly_totals["Date"], y=monthly_totals["oil_total"], name="Oil", line=dict(color="brown")))
+    fig.add_trace(go.Scatter(x=monthly_totals["Date"], y=monthly_totals["gas_total"], name="Gas", line=dict(color="green")))
+    fig.add_trace(go.Scatter(x=monthly_totals["Date"], y=monthly_totals["water_total"], name="Water", line=dict(color="blue")))
+    fig.update_layout(title="Monthly Production Trends", xaxis_title="Date", yaxis_title="Volume")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Water Cut Distribution
+    st.subheader("💧 Water Cut Distribution")
+    st.plotly_chart(px.histogram(well_stats, x="water_cut_%", nbins=20, title="Water Cut (%) Distribution"), use_container_width=True)
+
+    # GOR Distribution
+    st.subheader("⛽ Gas-Oil Ratio Distribution")
+    st.plotly_chart(px.histogram(well_stats, x="GOR", nbins=20, title="Gas-Oil Ratio Distribution"), use_container_width=True)
 
 # --------------------------------------------------
 # Function to read CSV
@@ -322,6 +422,7 @@ if welllist_file and prod_file and inj_file:
     df_welllist = read_csv_file(welllist_file)
     df_prod = read_csv_file(prod_file)
     df_inj = read_csv_file(inj_file)
+    
 
     if df_welllist is not None and df_prod is not None and df_inj is not None:
         st.subheader("Map Display Settings")
@@ -340,10 +441,9 @@ if welllist_file and prod_file and inj_file:
         st.subheader("Well ID to UWI Mapping")
         st.dataframe(df_wells[["UWI", "Well_ID", "Well_Type", "Deviation_Type"]])
 
-        st.subheader("Select Wells for Plots")
+        st.subheader("Select UWI for Injection-Production Plots")
         inj_wells = st.multiselect("Select Injection Wells (UWI)", sorted(df_inj["UWI"].unique()))
         prod_wells = st.multiselect("Select Production Wells (UWI)", sorted(df_prod["UWI"].unique()))
-        
 
         #if prod_wells or inj_wells:
         if prod_wells or inj_wells:
@@ -368,6 +468,13 @@ if welllist_file and prod_file and inj_file:
                 fig4 = plot_gas_water_prod(df_prod, prod_wells)
                 st.plotly_chart(fig4, use_container_width=True)
 
+        st.subheader("Select UWI for Statistical Aanalysis")
+        selected_uwis = st.multiselect("Select Wells (UWI) for Statistics and Analysis", sorted(df_prod["UWI"].unique())
+        )# Filter the datasets if wells are selected
+        if selected_uwis:
+            df_prod_selected = df_prod[df_prod["UWI"].isin(selected_uwis)]
+            df_inj_selected = df_inj[df_inj["UWI"].isin(selected_uwis)]
+            display_statistics_and_analysis(df_prod_selected, df_inj_selected)
 
 
 
