@@ -4,6 +4,76 @@ import plotly.graph_objects as go
 import numpy as np
 import plotly.express as px
 
+def validate_uploaded_files(df_welllist, df_prod, df_inj) -> bool:
+    """
+    Validate that uploaded CSVs contain the required columns.
+    Returns True if all validations pass, otherwise shows Streamlit errors and returns False.
+    """
+
+    # --- Welllist ---
+    welllist_required = [["UWI", "Location"], "Latitude NAD 83", "Longitude NAD 83"]
+    welllist_optional = ["Deviation Ind"]
+
+    # Check for UWI or Location
+    if not any(col in df_welllist.columns for col in welllist_required[0]):
+        st.error("❌ Welllist file must contain either 'UWI' or 'Location' column.")
+        return False
+    if "UWI" not in df_welllist.columns and "Location" in df_welllist.columns:
+        df_welllist.rename(columns={"Location": "UWI"}, inplace=True)
+
+    # Check coordinate columns
+    missing_welllist = [c for c in welllist_required[1:] if c not in df_welllist.columns]
+    if missing_welllist:
+        st.error(f"❌ Welllist file is missing required columns: {missing_welllist}")
+        return False
+
+    # --- Production ---
+    prod_required = ["UWI", "Date", "Oil M3", "Gas E3M3", "Water M3"]
+    missing_prod = [c for c in prod_required if c not in df_prod.columns]
+    if missing_prod:
+        st.error(f"❌ Production file is missing required columns: {missing_prod}")
+        return False
+
+    # --- Injection ---
+    inj_required = ["UWI", "Date", "Water Inj M3"]
+    missing_inj = [c for c in inj_required if c not in df_inj.columns]
+    if missing_inj:
+        st.error(f"❌ Injection file is missing required columns: {missing_inj}")
+        return False
+
+    # If everything is fine
+    return True
+
+
+# --------------------------------------------------
+# Function: Check for Location or UWI in Welllist
+# --------------------------------------------------
+def normalize_welllist(df_welllist: pd.DataFrame) -> pd.DataFrame | None:
+    cols = df_welllist.columns
+
+    has_uwi = "UWI" in cols
+    has_loc = "Location" in cols
+
+    if has_uwi and has_loc:
+        # If both exist, prefer UWI; warn user to avoid ambiguity
+        st.warning("Welllist has both 'UWI' and 'Location'. Using 'UWI' and ignoring 'Location'.")
+    elif not has_uwi and has_loc:
+        df_welllist = df_welllist.rename(columns={"Location": "UWI"})
+    elif not has_uwi and not has_loc:
+        st.error("Welllist must include either 'UWI' or 'Location' column.")
+        return None
+
+    # Make sure essential coordinate columns exist
+    required_coords = ["Latitude NAD 83", "Longitude NAD 83"]
+    missing = [c for c in required_coords if c not in df_welllist.columns]
+    if missing:
+        st.error(f"Welllist is missing required columns: {missing}")
+        return None
+
+    # Clean UWI values
+    df_welllist["UWI"] = df_welllist["UWI"].astype(str).str.strip()
+    return df_welllist
+
 
 # --------------------------------------------------
 # Function: Calculate Well Statistics
@@ -422,7 +492,15 @@ if welllist_file and prod_file and inj_file:
     df_welllist = read_csv_file(welllist_file)
     df_prod = read_csv_file(prod_file)
     df_inj = read_csv_file(inj_file)
-    
+   
+    if df_welllist is not None and df_prod is not None and df_inj is not None:
+        if not validate_uploaded_files(df_welllist, df_prod, df_inj):
+            st.stop()  # Halt execution until user fixes files
+
+    # Normalize Welllist so the rest of the app always sees a 'UWI' column
+    df_welllist = normalize_welllist(df_welllist)
+    if df_welllist is None:
+        st.stop()  # Show the error and halt gracefully    
 
     if df_welllist is not None and df_prod is not None and df_inj is not None:
         st.subheader("Map Display Settings")
@@ -480,3 +558,4 @@ if welllist_file and prod_file and inj_file:
 
 else:
     st.info("Please upload all three files to generate the map and plots.")
+
